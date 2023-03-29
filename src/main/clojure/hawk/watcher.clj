@@ -3,13 +3,7 @@
             [clojure.set :refer [map-invert]])
   (:import (java.io File)
            (hawk SensitivityWatchEventModifier)
-           (java.nio.file FileSystems Path Paths StandardWatchEventKinds WatchEvent WatchEvent$Modifier WatchKey WatchService)
-           (com.barbarysoftware.watchservice StandardWatchEventKind WatchableFile)))
-
-(def barbary-watch-event-kinds
-  {:create StandardWatchEventKind/ENTRY_CREATE
-   :modify StandardWatchEventKind/ENTRY_MODIFY
-   :delete StandardWatchEventKind/ENTRY_DELETE})
+           (java.nio.file FileSystems Path Paths StandardWatchEventKinds WatchEvent WatchEvent$Modifier WatchKey WatchService)))
 
 (def standard-watch-event-kinds
   {:create StandardWatchEventKinds/ENTRY_CREATE
@@ -95,34 +89,10 @@
                                            #(.register this path % (into-array WatchEvent$Modifier []))
                                            #(.reset ^hawk.AbstractWatchKey %)))))
 
-(def barbary-watcher-impl
-  {:register! (fn [this ^Path path events]
-                (let [file (-> path .toFile WatchableFile.)
-                      events (into-array (map barbary-watch-event-kinds events))]
-                  (.register file this events)))
-   :take! (fn [this]
-            (try (take-events
-                  this
-                  #(.take ^com.barbarysoftware.watchservice.WatchService %)
-                  #(.pollEvents ^com.barbarysoftware.watchservice.WatchKey %)
-                  (fn [_ ^com.barbarysoftware.watchservice.WatchEvent event]
-                    (let [kind (.kind event)
-                          context (.context event)]
-                      {:file (-> context str io/file .getCanonicalFile)
-                       :kind ((map-invert barbary-watch-event-kinds) kind)}))
-                  #(.reset ^com.barbarysoftware.watchservice.WatchService %))
-                 (catch com.barbarysoftware.watchservice.ClosedWatchServiceException _ _ nil)))
-   :stop! (fn [^com.barbarysoftware.watchservice.WatchService this]
-            (.close this))})
-
 (extend java.nio.file.WatchService Watcher java-watcher-impl)
 (extend hawk.PollingWatchService Watcher polling-watcher-impl)
-(extend com.barbarysoftware.watchservice.WatchService Watcher barbary-watcher-impl)
 
 (defmulti new-watcher :watcher)
-
-(defmethod new-watcher :barbary [_]
-  (com.barbarysoftware.watchservice.WatchService/newWatchService))
 
 (defmethod new-watcher :java [_]
   (.newWatchService (FileSystems/getDefault)))
@@ -132,5 +102,4 @@
 
 (defmethod new-watcher :default [_]
   (new-watcher
-   {:watcher
-    (if (= "Mac OS X" (System/getProperty "os.name")) :barbary :java)}))
+   {:watcher :java}))
